@@ -11,6 +11,8 @@ const UserSchema = new Schema(
     password: {
       type: String,
       required: true,
+      min: 6,
+      max: 1024,
     },
     firstname: {
       type: String,
@@ -25,6 +27,13 @@ const UserSchema = new Schema(
       enum: ["user", "admin"],
       required: true,
     },
+    refreshTokens: [
+      {
+        token: {
+          type: String,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -38,7 +47,9 @@ UserSchema.statics.findByUsername = async function (username, password) {
     const isMatch = await Bcrypt.compare(password, user.password);
     if (isMatch) return user;
     else return null;
-  } else return null;
+  } else {
+    return null;
+  }
 };
 
 // Modify anything i receive in the db, at every res.send()
@@ -52,12 +63,12 @@ UserSchema.methods.toJSON = function () {
 
   return userObject;
 };
-// hash the password
+// hash the password.
 UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     return next();
   }
-  this.password = await Bcrypt.hashSync(this.password, 10);
+  this.password = Bcrypt.hashSync(this.password, 10);
   next();
 });
 

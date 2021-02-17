@@ -1,6 +1,7 @@
 const express = require("express");
 const UserSchema = require("./userSchema");
-const { basicAuth } = require("./../middlewares/basicAuth");
+const { authorize } = require("../middlewares/auth");
+const { authenticate, refreshToken } = require("../middlewares/tools");
 
 const userRouter = express.Router();
 
@@ -15,8 +16,68 @@ userRouter.post("/signup", async (req, res, next) => {
   }
 });
 
+// login
+userRouter.post("/login", async (req, res, next) => {
+  try {
+    const { username, password } = req.body;
+
+    // findByUsername checks the user and compares the password
+    const user = await UserSchema.findByUsername(username, password);
+
+    // generate new token with authenticate function from tool.js
+    const accessToken = await authenticate(user);
+
+    res.send({ accessToken });
+  } catch (error) {
+    next(error);
+  }
+});
+
+userRouter.post("/logout", authorize, async (req, res, next) => {
+  try {
+    // find the user's refresh token
+    req.user.refreshToken = req.user.refreshToken.filter(
+      (token) => token.token !== req.body.refreshToken
+    );
+
+    await req.user.save();
+
+    res.send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+userRouter.post("/refreshToken", authorize, async (req, res, next) => {
+  const oldRefreshToken = req.body.oldRefreshToken;
+
+  if (!oldRefreshToken) {
+    const error = new Error("Refresh token is missing");
+    error.httpStatusCode = 400;
+    next(error);
+  } else {
+    // if the token is ok generate new access token and new refresh token
+    try {
+      const newTokens = await refreshToken(oldRefreshToken);
+      res.send(newTokens);
+    } catch (error) {
+      next(error);
+    }
+  }
+});
+
+userRouter.post("/logoutAll", authorize, async (req, res, next) => {
+  try {
+    req.user.refreshTokens = [];
+    await req.user.save();
+    res.send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // get users
-userRouter.get("/", basicAuth, async (req, res, next) => {
+userRouter.get("/", authorize, async (req, res, next) => {
   try {
     const users = await UserSchema.find();
     res.status(200).send(users);
@@ -26,9 +87,9 @@ userRouter.get("/", basicAuth, async (req, res, next) => {
 });
 
 // get single user by username
-userRouter.get("/me", basicAuth, async (req, res, next) => {
+userRouter.get("/me", authorize, async (req, res, next) => {
   try {
-    const user = await UserSchema.findOne({ username: req.body.username });
+    const user = await UserSchema.findByUsername(username);
     res.send(user);
   } catch (error) {
     next(error);
@@ -36,7 +97,7 @@ userRouter.get("/me", basicAuth, async (req, res, next) => {
 });
 
 // modify user credentials
-userRouter.put("/me", basicAuth, async (req, res, next) => {
+userRouter.put("/me", authorize, async (req, res, next) => {
   try {
     const updates = Object.keys(req.body);
     console.log(updates);
@@ -51,7 +112,7 @@ userRouter.put("/me", basicAuth, async (req, res, next) => {
   }
 });
 
-userRouter.delete("/me", basicAuth, async (req, res, next) => {
+userRouter.delete("/me", authorize, async (req, res, next) => {
   try {
     await req.user.deleteOne();
     res.status(204).send("Deleted");
