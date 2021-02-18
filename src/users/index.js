@@ -2,8 +2,28 @@ const express = require("express");
 const UserSchema = require("./userSchema");
 const { authorize } = require("../middlewares/auth");
 const { authenticate, refreshToken } = require("../middlewares/tools");
-
+const jwt = require("jsonwebtoken");
+const userSchema = require("./userSchema");
+const { reset } = require("nodemon");
 const userRouter = express.Router();
+
+//ogin ->
+//checking the credentials
+//generating the token with user-id
+//returning accessToken
+
+//users/me protected route middleware
+//get the token authorization header
+//verify this token with jwt.verify() and get the id from the toke
+//if token is not expired
+// find user by id
+//if toke is expired
+//request to /refreshtoken -> with refreshToken body
+//  verify refreshToken and get _id
+//find in db a user bi id
+//generate new refresh and accessTokeb
+//save refreshToken in db
+//send to the user new tokens
 
 // sign up
 userRouter.post("/signup", async (req, res, next) => {
@@ -21,13 +41,22 @@ userRouter.post("/login", async (req, res, next) => {
   try {
     const { username, password } = req.body;
 
-    // findByUsername checks the user and compares the password
     const user = await UserSchema.findByUsername(username, password);
 
-    // generate new token with authenticate function from tool.js
-    const accessToken = await authenticate(user);
+    const accessToken = await jwt.sign(
+      { _id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "15 mins" }
+    );
+    const refreshToken = await jwt.sign(
+      { _id: user._id },
+      process.env.JWT_REFRESH,
+      { expiresIn: "1 week" }
+    );
+    user.refreshTokens = user.refreshTokens.concat({ token: refreshToken });
+    await user.save();
 
-    res.send({ accessToken });
+    res.send({ accessToken, refreshToken });
   } catch (error) {
     next(error);
   }
@@ -48,21 +77,39 @@ userRouter.post("/logout", authorize, async (req, res, next) => {
   }
 });
 
-userRouter.post("/refreshToken", authorize, async (req, res, next) => {
-  const oldRefreshToken = req.body.oldRefreshToken;
+userRouter.post("/refreshToken", async (req, res, next) => {
+  try {
+    const oldRefreshToken = req.body.oldRefreshToken;
+    const decodedRefrexh = await jwt.verify(
+      oldRefreshToken,
+      process.env.JWT_REFRESH
+    );
+    if (decodedRefrexh) {
+      const user = await userSchema.findById(decodedRefrexh._id);
+      user.refreshTokens = user.refreshTokens.filter(
+        (t) => t.token !== oldRefreshToken
+      );
+      const accessToken = await jwt.sign(
+        { _id: user._id },
+        process.env.JWT_SECRET,
+        { expiresIn: "15 mins" }
+      );
+      const refreshToken = await jwt.sign(
+        { _id: user._id },
+        process.env.JWT_REFRESH,
+        { expiresIn: "1 week" }
+      );
+      user.refreshTokens = user.refreshTokens.concat({ token: refreshToken });
+      await user.save();
 
-  if (!oldRefreshToken) {
-    const error = new Error("Refresh token is missing");
-    error.httpStatusCode = 400;
-    next(error);
-  } else {
-    // if the token is ok generate new access token and new refresh token
-    try {
-      const newTokens = await refreshToken(oldRefreshToken);
-      res.send(newTokens);
-    } catch (error) {
-      next(error);
+      res.send({ refreshToken, accessToken });
+    } else {
+      const err = new Error("error in refresh");
+      next(err);
     }
+  } catch (error) {
+    console.log(error);
+    next(error);
   }
 });
 
@@ -89,8 +136,7 @@ userRouter.get("/", authorize, async (req, res, next) => {
 // get single user by username
 userRouter.get("/me", authorize, async (req, res, next) => {
   try {
-    const user = await UserSchema.findByUsername(username);
-    res.send(user);
+    res.send(req.user);
   } catch (error) {
     next(error);
   }

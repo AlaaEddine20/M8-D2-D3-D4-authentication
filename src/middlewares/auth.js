@@ -1,28 +1,24 @@
 const userSchema = require("../users/userSchema");
-const { verifyAccessToken } = require("./tools");
+const jwt = require("jsonwebtoken");
 
 const authorize = async (req, res, next) => {
   try {
-    // grab the token from the headers
-    const token = await req.headers("Authorization").replace("Bearer ", "");
-    // decode token from verifyAccessToken function
-    const decodedToken = verifyAccessToken(token);
+    const token = req.headers.authorization.split(" ")[1];
+    const decoded = await jwt.verify(token, process.env.JWT_SECRET);
+    console.log(decoded);
+    if (decoded) {
+      const user = await userSchema.findById(decoded._id);
+      req.user = user;
 
-    const user = await userSchema.findOne({
-      _id: decodedToken._id,
-    });
-
-    if (user) {
-      req.token = token; // create new token
-      req.user = user; // create new user
       next();
     } else {
-      throw new Error();
+      const err = new Error("unauthorized");
+      next(err);
     }
-  } catch (err) {
-    const error = new Error("Please authenticate");
-    error.httpStatusCode = 401;
-    next(error);
+  } catch (e) {
+    console.log(e);
+    const err = new Error("something is wrong");
+    next(err);
   }
 };
 
