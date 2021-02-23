@@ -3,8 +3,6 @@ const UserSchema = require("./userSchema");
 const { authorize } = require("../middlewares/auth");
 const { authenticate, refreshToken } = require("../middlewares/tools");
 const jwt = require("jsonwebtoken");
-const userSchema = require("./userSchema");
-const { reset } = require("nodemon");
 const userRouter = express.Router();
 
 //ogin ->
@@ -39,6 +37,7 @@ userRouter.post("/signup", async (req, res, next) => {
 // login
 userRouter.post("/login", async (req, res, next) => {
   try {
+    console.log("here");
     const { username, password } = req.body;
 
     const user = await UserSchema.findByUsername(username, password);
@@ -58,6 +57,7 @@ userRouter.post("/login", async (req, res, next) => {
 
     res.send({ accessToken, refreshToken });
   } catch (error) {
+    console.log(error);
     next(error);
   }
 });
@@ -65,13 +65,13 @@ userRouter.post("/login", async (req, res, next) => {
 userRouter.post("/logout", authorize, async (req, res, next) => {
   try {
     // find the user's refresh token
-    req.user.refreshToken = req.user.refreshToken.filter(
+    req.user.refreshTokens = req.user.refreshTokens.filter(
       (token) => token.token !== req.body.refreshToken
     );
 
     await req.user.save();
 
-    res.send();
+    res.send("Logged out");
   } catch (error) {
     next(error);
   }
@@ -80,12 +80,12 @@ userRouter.post("/logout", authorize, async (req, res, next) => {
 userRouter.post("/refreshToken", async (req, res, next) => {
   try {
     const oldRefreshToken = req.body.oldRefreshToken;
-    const decodedRefrexh = await jwt.verify(
+    const decodedRefresh = await jwt.verify(
       oldRefreshToken,
       process.env.JWT_REFRESH
     );
-    if (decodedRefrexh) {
-      const user = await userSchema.findById(decodedRefrexh._id);
+    if (decodedRefresh) {
+      const user = await UserSchema.findById(decodedRefresh._id);
       user.refreshTokens = user.refreshTokens.filter(
         (t) => t.token !== oldRefreshToken
       );
